@@ -1,0 +1,26 @@
+# Existing CI of the property_ops repository: runs the models, then the tests, in two separate steps (no single
+# build step), so readiness check 7 fails until a repository onboarding ticket adds the GDP workflow.
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  dbt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "dbt-core==1.12.7" "dbt-duckdb==1.11.1" "duckdb==1.5.6"
+      - name: Profile
+        run: |
+          mkdir -p ~/.dbt
+          printf 'property_ops:\n  target: ci\n  outputs:\n    ci:\n      type: duckdb\n      path: ci.duckdb\n      schema: main\n' > ~/.dbt/profiles.yml
+      - name: Load fixtures
+        run: |
+          python -c "import duckdb,glob,os; c=duckdb.connect('ci.duckdb'); c.execute('create schema if not exists raw'); [c.execute(f\"create or replace table raw.{os.path.basename(f)[:-4]} as select * from read_csv('{f}', all_varchar=true)\") for f in glob.glob('tests/fixtures/*.csv')]"
+      - run: dbt run
+      - run: dbt test
